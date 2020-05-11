@@ -572,7 +572,7 @@ impl Future for MegaphoneUpdater {
                         .send()
                         .and_then(|response| response.error_for_status())
                         .and_then(|mut response| response.json())
-                        .map_err(|_| "Unable to query/decode the API query".into());
+                        .map_err(|e| format!("Unable to query/decode the API query {}", e).into());
                     MegaphoneState::Requesting(Box::new(fut))
                 }
                 MegaphoneState::Requesting(ref mut response) => {
@@ -587,11 +587,9 @@ impl Future for MegaphoneUpdater {
                         }
                         Ok(Async::NotReady) => return Ok(Async::NotReady),
                         Err(error) => {
-                            error!("Failed to get response, queue again {:?}", error);
-                            capture_message(
-                                &format!("Failed to get response, queue again {:?}", error),
-                                sentry::Level::Error,
-                            );
+                            let msg = format!("Megaphone API response error: {:?}", error);
+                            error!("{}", msg);
+                            capture_message(&msg, sentry::Level::Error);
                         }
                     };
                     self.timeout.reset(at);
