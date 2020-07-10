@@ -1,5 +1,6 @@
 //! Error types and transformations
 
+use crate::db::error::DbError;
 use crate::server::{RouterError, VapidError};
 use actix_web::{
     dev::{HttpResponseBuilder, ServiceResponse},
@@ -72,7 +73,7 @@ pub enum ApiErrorKind {
     TokenHashValidation(#[source] openssl::error::ErrorStack),
 
     #[error("Database error: {0}")]
-    Database(#[source] autopush_common::errors::Error),
+    Database(#[from] DbError),
 
     #[error("Invalid token")]
     InvalidToken,

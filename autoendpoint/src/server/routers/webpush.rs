@@ -1,12 +1,11 @@
-use crate::error::{ApiErrorKind, ApiResult};
+use crate::db::client::DbClient;
+use crate::error::{ApiError, ApiErrorKind, ApiResult};
 use crate::server::extractors::notification::Notification;
 use crate::server::routers::{Router, RouterResponse};
 use crate::server::RouterError;
 use async_trait::async_trait;
-use autopush_common::db::{DynamoDbUser, DynamoStorage};
-use autopush_common::errors::ErrorKind;
+use autopush_common::db::DynamoDbUser;
 use cadence::{Counted, StatsdClient};
-use futures::compat::Future01CompatExt;
 use reqwest::{Response, StatusCode};
 use std::collections::HashMap;
 use url::Url;
@@ -18,7 +17,7 @@ use uuid::Uuid;
 /// server is located via the database routing table. If the server is busy or
 /// not available, the notification is stored in the database.
 pub struct WebPushRouter {
-    pub ddb: DynamoStorage,
+    pub ddb: DbClient,
     pub metrics: StatsdClient,
     pub http: reqwest::Client,
     pub endpoint_url: Url,
@@ -68,20 +67,16 @@ impl Router for WebPushRouter {
         // Retrieve the user data again, they may have reconnected or the node
         // is no longer busy.
         trace!("Re-fetching user to trigger notification check");
-        let user = match self.ddb.get_user(&user.uaid).compat().await {
-            Ok(user) => user,
+        let user = match self.ddb.get_user(user.uaid).await {
+            Ok(Some(user)) => user,
+            Ok(None) => {
+                trace!("No user found, must have been deleted");
+                return Err(ApiErrorKind::Router(RouterError::UserWasDeleted).into());
+            }
             Err(e) => {
-                return match e.kind() {
-                    ErrorKind::Msg(msg) if msg == "No user record found" => {
-                        trace!("No user found, must have been deleted");
-                        Err(ApiErrorKind::Router(RouterError::UserWasDeleted).into())
-                    }
-                    // Database error, but we already stored the message so it's ok
-                    _ => {
-                        debug!("Database error while re-fetching user: {}", e);
-                        Ok(self.make_stored_response(notification))
-                    }
-                };
+                // Database error, but we already stored the message so it's ok
+                debug!("Database error while re-fetching user: {}", e);
+                return Ok(self.make_stored_response(notification));
             }
         };
 
@@ -146,16 +141,9 @@ impl WebPushRouter {
     async fn store_notification(&self, notification: &Notification) -> ApiResult<()> {
         self.ddb
             .store_message(
-                &notification.subscription.user.uaid,
-                notification
-                    .subscription
-                    .user
-                    .current_month
-                    .clone()
-                    .unwrap_or_else(|| self.ddb.current_message_month.clone()),
+                notification.subscription.user.uaid,
                 notification.clone().into(),
             )
-            .compat()
             .await
             .map_err(|e| ApiErrorKind::Router(RouterError::SaveDb(e)).into())
     }
@@ -166,10 +154,9 @@ impl WebPushRouter {
         self.metrics.incr("updates.client.host_gone").ok();
 
         self.ddb
-            .remove_node_id(&user.uaid, node_id, user.connected_at)
-            .compat()
+            .remove_node_id(user.uaid, node_id, user.connected_at)
             .await
-            .map_err(|e| ApiErrorKind::Database(e).into())
+            .map_err(ApiError::from)
     }
 
     /// Update metrics and create a response for when a notification has been directly forwarded to
