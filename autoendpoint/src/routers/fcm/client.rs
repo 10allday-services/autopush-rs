@@ -1,5 +1,5 @@
-use crate::server::routers::fcm::error::FcmError;
-use crate::server::routers::fcm::settings::FcmCredential;
+use crate::routers::fcm::error::FcmError;
+use crate::routers::fcm::settings::FcmCredential;
 use reqwest::StatusCode;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -116,9 +116,9 @@ struct FcmErrorResponse {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::server::routers::fcm::client::FcmClient;
-    use crate::server::routers::fcm::error::FcmError;
-    use crate::server::routers::fcm::settings::FcmCredential;
+    use crate::routers::fcm::client::FcmClient;
+    use crate::routers::fcm::error::FcmError;
+    use crate::routers::fcm::settings::FcmCredential;
     use std::collections::HashMap;
     use std::io::Write;
     use std::path::PathBuf;
